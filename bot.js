@@ -36,6 +36,8 @@ client.once('ready', async () => {
 client.on('interactionCreate', async interaction => {
 
     if (interaction.isCommand()) {
+
+        // IP Komutu
         if (interaction.commandName === 'ip') {
             const embed = new EmbedBuilder()
                 .setColor(0x00FFAA)
@@ -49,6 +51,7 @@ client.on('interactionCreate', async interaction => {
             await interaction.reply({ embeds: [embed] });
         }
 
+        // Destek Komutu
         if (interaction.commandName === 'destek') {
             const embed = new EmbedBuilder()
                 .setColor(0x6B00FF)
@@ -63,6 +66,76 @@ client.on('interactionCreate', async interaction => {
                 .setStyle(ButtonStyle.Primary);
 
             await interaction.reply({ embeds: [embed], components: [new ActionRowBuilder().addComponents(button)] });
+        }
+
+        // Şikayet Komutu
+        if (interaction.commandName === 'şikayet') {
+            const modal = new ModalBuilder()
+                .setCustomId('sikayet_modal')
+                .setTitle('📢 Yeni Şikayet Bildirimi');
+
+            modal.addComponents(
+                new ActionRowBuilder().addComponents(
+                    new TextInputBuilder()
+                        .setCustomId('sikayet_nick')
+                        .setLabel('Oyun İçi Kullanıcı Adınız')
+                        .setStyle(TextInputStyle.Short)
+                        .setRequired(true)
+                ),
+                new ActionRowBuilder().addComponents(
+                    new TextInputBuilder()
+                        .setCustomId('sikayet_edilen')
+                        .setLabel('Şikayet Edilen Kullanıcı')
+                        .setStyle(TextInputStyle.Short)
+                        .setRequired(true)
+                ),
+                new ActionRowBuilder().addComponents(
+                    new TextInputBuilder()
+                        .setCustomId('sikayet_sebep')
+                        .setLabel('Şikayet Sebebi')
+                        .setStyle(TextInputStyle.Paragraph)
+                        .setRequired(true)
+                )
+            );
+
+            await interaction.showModal(modal);
+        }
+
+        // Öneri Komutu
+        if (interaction.commandName === 'öneri') {
+            const modal = new ModalBuilder()
+                .setCustomId('oneri_modal')
+                .setTitle('💡 Yeni Öneri');
+
+            modal.addComponents(
+                new ActionRowBuilder().addComponents(
+                    new TextInputBuilder()
+                        .setCustomId('oneri_nick')
+                        .setLabel('Oyun İçi Kullanıcı Adınız')
+                        .setStyle(TextInputStyle.Short)
+                        .setRequired(true)
+                ),
+                new ActionRowBuilder().addComponents(
+                    new TextInputBuilder()
+                        .setCustomId('oneri_icerik')
+                        .setLabel('Öneriniz')
+                        .setStyle(TextInputStyle.Paragraph)
+                        .setRequired(true)
+                )
+            );
+
+            await interaction.showModal(modal);
+        }
+
+        // Hesap Komutu
+        if (interaction.commandName === 'hesap') {
+            const embed = new EmbedBuilder()
+                .setColor(0xFFA500)
+                .setTitle('🔗 Hesap Eşleme')
+                .setDescription('⏳ Bu özellik yakında aktif olacak! Takipte kalın.')
+                .setFooter({ text: 'KaeSky • Çok Yakında!' });
+
+            await interaction.reply({ embeds: [embed], ephemeral: true });
         }
     }
 
@@ -132,6 +205,58 @@ client.on('interactionCreate', async interaction => {
             console.error(error);
             await interaction.reply({ content: '❌ Ticket oluşturulamadı. Kategori ID\'sini kontrol edin.', ephemeral: true });
         }
+    }
+
+    // Şikayet Modal Submit
+    if (interaction.isModalSubmit() && interaction.customId === 'sikayet_modal') {
+        const nick = interaction.fields.getTextInputValue('sikayet_nick');
+        const edilen = interaction.fields.getTextInputValue('sikayet_edilen');
+        const sebep = interaction.fields.getTextInputValue('sikayet_sebep');
+
+        const kanal = interaction.guild.channels.cache.get(SIKAYET_KANALI_ID);
+        if (!kanal) {
+            return interaction.reply({ content: '❌ Şikayet kanalı bulunamadı.', ephemeral: true });
+        }
+
+        const embed = new EmbedBuilder()
+            .setColor(0xFF0000)
+            .setTitle('📢 Yeni Şikayet Bildirimi')
+            .addFields(
+                { name: '👤 Şikayetçi (Discord)', value: `${interaction.user}`, inline: true },
+                { name: '🎮 Oyun İçi Nick', value: nick, inline: true },
+                { name: '🚨 Şikayet Edilen', value: edilen, inline: false },
+                { name: '📝 Şikayet Sebebi', value: sebep, inline: false }
+            )
+            .setFooter({ text: 'KaeSky Şikayet Sistemi' })
+            .setTimestamp();
+
+        await kanal.send({ embeds: [embed] });
+        await interaction.reply({ content: '✅ Şikayetiniz iletildi, en kısa sürede incelenecek!', ephemeral: true });
+    }
+
+    // Öneri Modal Submit
+    if (interaction.isModalSubmit() && interaction.customId === 'oneri_modal') {
+        const nick = interaction.fields.getTextInputValue('oneri_nick');
+        const icerik = interaction.fields.getTextInputValue('oneri_icerik');
+
+        const kanal = interaction.guild.channels.cache.get(ONERI_KANALI_ID);
+        if (!kanal) {
+            return interaction.reply({ content: '❌ Öneri kanalı bulunamadı.', ephemeral: true });
+        }
+
+        const embed = new EmbedBuilder()
+            .setColor(0x00BFFF)
+            .setTitle('💡 Yeni Öneri')
+            .addFields(
+                { name: '👤 Kullanıcı (Discord)', value: `${interaction.user}`, inline: true },
+                { name: '🎮 Oyun İçi Nick', value: nick, inline: true },
+                { name: '💬 Öneri', value: icerik, inline: false }
+            )
+            .setFooter({ text: 'KaeSky Öneri Sistemi' })
+            .setTimestamp();
+
+        await kanal.send({ embeds: [embed] });
+        await interaction.reply({ content: '✅ Öneriniz iletildi, teşekkürler!', ephemeral: true });
     }
 });
 
