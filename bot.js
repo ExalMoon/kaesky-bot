@@ -15,9 +15,17 @@ const SIKAYET_KANALI_ID = '1508120867467559103';
 const ONERI_KANALI_ID = '1505901697392836744';
 const TICKET_KATEGORI_ID = '1505901697392836742';
 const YETKILI_ROL_ID = '1505933959605915709';
+const SEVIYE_KANAL_ID = '1505901698571571357';
 
 // Aktif çekilişleri hafızada tut
 const cekilisler = new Map();
+
+// Seviye verilerini hafızada tut
+const kullaniciVerileri = new Map();
+
+function xpHesapla(seviye) {
+    return seviye * 100;
+}
 
 client.once('ready', async () => {
     console.log(`${client.user.tag} aktif!`);
@@ -36,11 +44,53 @@ client.once('ready', async () => {
                 .addStringOption(opt => opt.setName('ödül').setDescription('Çekiliş ödülü').setRequired(true))
                 .addIntegerOption(opt => opt.setName('süre').setDescription('Süre (dakika)').setRequired(true))
                 .addIntegerOption(opt => opt.setName('kazanan').setDescription('Kazanan sayısı').setRequired(true)),
+            new SlashCommandBuilder().setName('seviye').setDescription('Seviyeni gör'),
+            new SlashCommandBuilder().setName('sıralama').setDescription('Sunucu XP sıralamasını gör'),
         ]});
         console.log('✅ Tüm slash komutları yüklendi!');
     } catch (error) {
         console.error('Komut yükleme hatası:', error);
     }
+});
+
+// Mesaj XP sistemi
+client.on('messageCreate', async message => {
+    if (message.author.bot) return;
+    if (!message.guild) return;
+
+    const userId = message.author.id;
+
+    if (!kullaniciVerileri.has(userId)) {
+        kullaniciVerileri.set(userId, { xp: 0, seviye: 1 });
+    }
+
+    const veri = kullaniciVerileri.get(userId);
+    veri.xp += 5;
+
+    const gerekliXP = xpHesapla(veri.seviye);
+
+    if (veri.xp >= gerekliXP) {
+        veri.xp -= gerekliXP;
+        veri.seviye += 1;
+
+        const seviyeKanali = message.guild.channels.cache.get(SEVIYE_KANAL_ID);
+        if (seviyeKanali) {
+            const embed = new EmbedBuilder()
+                .setColor(0xFFD700)
+                .setTitle('🎉 Seviye Atladı!')
+                .setDescription(`${message.author} yeni seviyesine ulaştı!`)
+                .addFields(
+                    { name: '🏆 Yeni Seviye', value: `**${veri.seviye}**`, inline: true },
+                    { name: '⭐ Sonraki Seviye İçin', value: `${xpHesapla(veri.seviye)} XP`, inline: true }
+                )
+                .setThumbnail(message.author.displayAvatarURL())
+                .setTimestamp();
+
+            await seviyeKanali.send({ embeds: [embed] });
+        }
+    }
+
+    kullaniciVerileri.set(userId, veri);
 });
 
 client.on('interactionCreate', async interaction => {
@@ -150,7 +200,6 @@ client.on('interactionCreate', async interaction => {
 
         // Çekiliş Komutu
         if (interaction.commandName === 'çekiliş') {
-            // Yetkili kontrolü
             if (!interaction.member.roles.cache.has(YETKILI_ROL_ID)) {
                 return interaction.reply({ content: '❌ Bu komutu kullanmak için yetkiniz yok!', ephemeral: true });
             }
@@ -181,7 +230,6 @@ client.on('interactionCreate', async interaction => {
             await interaction.reply({ embeds: [embed], components: [new ActionRowBuilder().addComponents(button)] });
             const mesaj = await interaction.fetchReply();
 
-            // Çekilişi kaydet
             cekilisler.set(mesaj.id, {
                 odul,
                 kazananSayisi,
@@ -191,7 +239,6 @@ client.on('interactionCreate', async interaction => {
                 mesajId: mesaj.id
             });
 
-            // Süre dolunca kazananı seç
             setTimeout(async () => {
                 const cekilis = cekilisler.get(mesaj.id);
                 if (!cekilis) return;
@@ -216,7 +263,6 @@ client.on('interactionCreate', async interaction => {
 
                     await kanal.messages.fetch(mesaj.id).then(m => m.edit({ embeds: [bitisEmbed], components: [new ActionRowBuilder().addComponents(disabledButton)] }));
                 } else {
-                    // Kazananları seç
                     const karisik = [...cekilis.katilimcilar].sort(() => Math.random() - 0.5);
                     const kazananlar = karisik.slice(0, Math.min(cekilis.kazananSayisi, karisik.length));
                     const kazananMentions = kazananlar.map(id => `<@${id}>`).join(', ');
@@ -238,6 +284,53 @@ client.on('interactionCreate', async interaction => {
                 cekilisler.delete(mesaj.id);
             }, sure * 60 * 1000);
         }
+
+        // Seviye Komutu
+        if (interaction.commandName === 'seviye') {
+            const userId = interaction.user.id;
+            const veri = kullaniciVerileri.get(userId) || { xp: 0, seviye: 1 };
+            const gerekliXP = xpHesapla(veri.seviye);
+            const yuzde = Math.floor((veri.xp / gerekliXP) * 10);
+            const bar = '█'.repeat(yuzde) + '░'.repeat(10 - yuzde);
+
+            const embed = new EmbedBuilder()
+                .setColor(0x6B00FF)
+                .setTitle(`📊 ${interaction.user.username} — Seviye Bilgisi`)
+                .addFields(
+                    { name: '🏆 Seviye', value: `**${veri.seviye}**`, inline: true },
+                    { name: '⭐ XP', value: `${veri.xp} / ${gerekliXP}`, inline: true },
+                    { name: '📈 İlerleme', value: `\`${bar}\` %${Math.floor((veri.xp / gerekliXP) * 100)}`, inline: false }
+                )
+                .setThumbnail(interaction.user.displayAvatarURL())
+                .setTimestamp();
+
+            await interaction.reply({ embeds: [embed] });
+        }
+
+        // Sıralama Komutu
+        if (interaction.commandName === 'sıralama') {
+            const siralama = [...kullaniciVerileri.entries()]
+                .sort((a, b) => (b[1].seviye * 10000 + b[1].xp) - (a[1].seviye * 10000 + a[1].xp))
+                .slice(0, 10);
+
+            if (siralama.length === 0) {
+                return interaction.reply({ content: '❌ Henüz hiç veri yok!', ephemeral: true });
+            }
+
+            const satirlar = siralama.map(([id, veri], index) => {
+                const madalya = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `**${index + 1}.**`;
+                return `${madalya} <@${id}> — Seviye **${veri.seviye}** (${veri.xp} XP)`;
+            }).join('\n');
+
+            const embed = new EmbedBuilder()
+                .setColor(0xFFD700)
+                .setTitle('🏆 XP Sıralaması')
+                .setDescription(satirlar)
+                .setFooter({ text: 'KaeSky Seviye Sistemi' })
+                .setTimestamp();
+
+            await interaction.reply({ embeds: [embed] });
+        }
     }
 
     // Çekilişe Katıl Butonu
@@ -253,7 +346,6 @@ client.on('interactionCreate', async interaction => {
 
         cekilis.katilimcilar.push(interaction.user.id);
 
-        // Embed'i güncelle
         const embed = EmbedBuilder.from(interaction.message.embeds[0])
             .spliceFields(2, 1, { name: '👥 Katılımcılar', value: `${cekilis.katilimcilar.length} kişi`, inline: true });
 
