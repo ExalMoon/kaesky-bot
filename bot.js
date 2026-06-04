@@ -16,11 +16,9 @@ const ONERI_KANALI_ID = '1505901697392836744';
 const TICKET_KATEGORI_ID = '1505901697392836742';
 const YETKILI_ROL_ID = '1505933959605915709';
 const SEVIYE_KANAL_ID = '1505901698571571357';
+const TICKET_LOG_KANAL_ID = '1505901698571571359';
 
-// Aktif çekilişleri hafızada tut
 const cekilisler = new Map();
-
-// Seviye verilerini hafızada tut
 const kullaniciVerileri = new Map();
 
 function xpHesapla(seviye) {
@@ -231,9 +229,7 @@ client.on('interactionCreate', async interaction => {
             const mesaj = await interaction.fetchReply();
 
             cekilisler.set(mesaj.id, {
-                odul,
-                kazananSayisi,
-                bitis,
+                odul, kazananSayisi, bitis,
                 katilimcilar: [],
                 kanalId: interaction.channelId,
                 mesajId: mesaj.id
@@ -260,7 +256,6 @@ client.on('interactionCreate', async interaction => {
                         .setDescription(`**Ödül:** ${cekilis.odul}\n\n❌ Yeterli katılımcı olmadığı için kazanan seçilemedi.`)
                         .setFooter({ text: 'KaeSky Çekiliş Sistemi' })
                         .setTimestamp();
-
                     await kanal.messages.fetch(mesaj.id).then(m => m.edit({ embeds: [bitisEmbed], components: [new ActionRowBuilder().addComponents(disabledButton)] }));
                 } else {
                     const karisik = [...cekilis.katilimcilar].sort(() => Math.random() - 0.5);
@@ -271,9 +266,7 @@ client.on('interactionCreate', async interaction => {
                         .setColor(0xFFD700)
                         .setTitle('🎉 ÇEKİLİŞ BİTTİ!')
                         .setDescription(`**Ödül:** ${cekilis.odul}\n\n🏆 **Kazanan(lar):** ${kazananMentions}`)
-                        .addFields(
-                            { name: '👥 Toplam Katılımcı', value: `${cekilis.katilimcilar.length} kişi`, inline: true }
-                        )
+                        .addFields({ name: '👥 Toplam Katılımcı', value: `${cekilis.katilimcilar.length} kişi`, inline: true })
                         .setFooter({ text: 'KaeSky Çekiliş Sistemi' })
                         .setTimestamp();
 
@@ -339,7 +332,6 @@ client.on('interactionCreate', async interaction => {
         if (!cekilis) {
             return interaction.reply({ content: '❌ Bu çekiliş artık aktif değil.', ephemeral: true });
         }
-
         if (cekilis.katilimcilar.includes(interaction.user.id)) {
             return interaction.reply({ content: '⚠️ Zaten bu çekilişe katıldınız!', ephemeral: true });
         }
@@ -353,7 +345,7 @@ client.on('interactionCreate', async interaction => {
         await interaction.reply({ content: '✅ Çekilişe başarıyla katıldınız! İyi şanslar 🍀', ephemeral: true });
     }
 
-    // Ticket Butonu
+    // Ticket Oluştur Butonu
     if (interaction.isButton() && interaction.customId === 'ticket_olustur') {
         const modal = new ModalBuilder()
             .setCustomId('ticket_modal')
@@ -377,6 +369,43 @@ client.on('interactionCreate', async interaction => {
         );
 
         await interaction.showModal(modal);
+    }
+
+    // Ticket Kapat Butonu
+    if (interaction.isButton() && interaction.customId === 'ticket_kapat') {
+        const kanal = interaction.channel;
+
+        // Kanal mesajlarını topla (log için)
+        const mesajlar = await kanal.messages.fetch({ limit: 100 });
+        const logMetni = mesajlar
+            .reverse()
+            .map(m => `[${new Date(m.createdTimestamp).toLocaleString('tr-TR')}] ${m.author.tag}: ${m.content || '[Embed/Dosya]'}`)
+            .join('\n');
+
+        // Log kanalına gönder
+        const logKanali = interaction.guild.channels.cache.get(TICKET_LOG_KANAL_ID);
+        if (logKanali) {
+            const logEmbed = new EmbedBuilder()
+                .setColor(0xFF4444)
+                .setTitle('🗂 Ticket Kapatıldı')
+                .addFields(
+                    { name: '📋 Kanal', value: kanal.name, inline: true },
+                    { name: '🔒 Kapatan', value: `${interaction.user}`, inline: true },
+                    { name: '📅 Tarih', value: new Date().toLocaleString('tr-TR'), inline: true }
+                )
+                .setFooter({ text: 'KaeSky Ticket Sistemi' })
+                .setTimestamp();
+
+            // Log metnini dosya olarak gönder
+            const { AttachmentBuilder } = require('discord.js');
+            const buffer = Buffer.from(logMetni, 'utf-8');
+            const dosya = new AttachmentBuilder(buffer, { name: `ticket-${kanal.name}.txt` });
+
+            await logKanali.send({ embeds: [logEmbed], files: [dosya] });
+        }
+
+        await interaction.reply({ content: '🔒 Ticket kapatılıyor...' });
+        setTimeout(() => kanal.delete().catch(console.error), 3000);
     }
 
     // Ticket Modal Submit
@@ -406,14 +435,21 @@ client.on('interactionCreate', async interaction => {
                 )
                 .setTimestamp();
 
-            await ticketChannel.send({ 
-                embeds: [embed], 
-                content: `${interaction.user} destek talebiniz başarıyla açıldı!` 
+            const kapatBtn = new ButtonBuilder()
+                .setCustomId('ticket_kapat')
+                .setLabel('Ticketı Kapat')
+                .setEmoji('🔒')
+                .setStyle(ButtonStyle.Danger);
+
+            await ticketChannel.send({
+                embeds: [embed],
+                content: `${interaction.user} destek talebiniz başarıyla açıldı!`,
+                components: [new ActionRowBuilder().addComponents(kapatBtn)]
             });
 
-            await interaction.reply({ 
-                content: `✅ Destek talebiniz oluşturuldu! → ${ticketChannel}`, 
-                ephemeral: true 
+            await interaction.reply({
+                content: `✅ Destek talebiniz oluşturuldu! → ${ticketChannel}`,
+                ephemeral: true
             });
         } catch (error) {
             console.error(error);
