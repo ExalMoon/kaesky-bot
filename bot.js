@@ -34,105 +34,13 @@ const TICKET_KATEGORI_ID = '1505901697392836742';
 const YETKILI_ROL_ID = '1505933959605915709';
 const SEVIYE_KANAL_ID = '1505901698571571357';
 const TICKET_LOG_KANALI_ID = '1505901698571571359';
-const MOD_LOG_KANALI_ID = '1505901698571571359'; // Log kanal ID'nizi buraya yazın
-
-// ====================== OTO MODERASYON AYARLARI ======================
-const kufurListesi = [
-    'amk', 'aq', 'oe', 'sik', 'siktir', 'orospu', 'piç', 'yarrak', 'amına', 'amını', 'göt',
-    'götveren', 'mal', 'salak', 'gerizekalı', 'ibne', 'oç', 'oc', 'ananı', 'anası',
-    'kahpe', 'pezevenk', 'fuck', 'shit', 'bitch', 'mk', 'skm', 'amq', 'amına koyayım'
-];
-
-const reklamKelimeleri = [
-    'discord.gg', 'discord.me', 'discord.io', 'nitro', 'free nitro', 'boost', 'ucuz',
-    'satılık', 'satış', 'alım', 'hediye', 'giveaway', 'partner'
-];
-
-const SPAM_LIMIT = 5;
-const SPAM_ZAMAN = 5000;
-
-const muteSureleri = [
-    30 * 1000,    // 1. uyarı
-    60 * 1000,    // 2. uyarı
-    180 * 1000,   // 3. uyarı
-    5 * 60 * 1000, // 4. uyarı
-    10 * 60 * 1000 // 5. uyarı
-];
 
 const cekilisler = new Map();
 const kullaniciVerileri = new Map();
-const spamTakip = new Map();
-const uyarilar = new Map();
-
-// ====================== FONKSİYONLAR ======================
-async function getMutedRol(guild) {
-    let mutedRol = guild.roles.cache.find(r => r.name === 'Muted');
-    if (!mutedRol) {
-        mutedRol = await guild.roles.create({
-            name: 'Muted',
-            color: 0x808080,
-            reason: 'Otomatik moderasyon için oluşturuldu'
-        });
-
-        for (const [, kanal] of guild.channels.cache) {
-            await kanal.permissionOverwrites.create(mutedRol, {
-                SendMessages: false,
-                AddReactions: false,
-                Speak: false,
-                Connect: false
-            }).catch(() => {});
-        }
-    }
-    return mutedRol;
-}
-
-async function uyariVer(message, sebep) {
-    const userId = message.author.id;
-    const mevcut = uyarilar.get(userId) || 0;
-    const yeni = mevcut + 1;
-    uyarilar.set(userId, yeni);
-
-    const sure = muteSureleri[Math.min(yeni - 1, muteSureleri.length - 1)];
-    const sureText = sure >= 60000 ? `${Math.floor(sure / 60000)} dakika` : `${sure / 1000} saniye`;
-
-    try {
-        const mutedRol = await getMutedRol(message.guild);
-        await message.member.roles.add(mutedRol).catch(() => {});
-
-        const embed = new EmbedBuilder()
-            .setColor(0xFF0000)
-            .setTitle('🚫 Oto Moderasyon')
-            .setDescription(`${message.author} **uyarıldı!**`)
-            .addFields(
-                { name: 'Sebep', value: sebep, inline: true },
-                { name: 'Uyarı', value: `${yeni}. uyarı`, inline: true },
-                { name: 'Süre', value: sureText, inline: true }
-            )
-            .setTimestamp();
-
-        await message.channel.send({ embeds: [embed] }).catch(() => {});
-        
-        const logKanal = message.guild.channels.cache.get(MOD_LOG_KANALI_ID);
-        if (logKanal) {
-            logKanal.send({ embeds: [embed] }).catch(() => {});
-        }
-
-        setTimeout(async () => {
-            if (message.member) {
-                await message.member.roles.remove(mutedRol).catch(() => {});
-            }
-            if (yeni >= 5) uyarilar.delete(userId);
-        }, sure);
-
-    } catch (err) {
-        console.error('UyariVer hatası:', err);
-    }
-}
 
 // ====================== READY EVENT ======================
 client.once('ready', async () => {
     console.log(`${client.user.tag} aktif!`);
-    console.log('🚀 Oto Moderasyon Sistemi Aktif (Küfür, Spam, Caps, Link, Reklam)');
 
     const rest = new REST({ version: '10' }).setToken(TOKEN);
     try {
@@ -164,51 +72,6 @@ client.on('messageCreate', async message => {
     if (message.author.bot || !message.guild) return;
 
     const userId = message.author.id;
-    const icerik = message.content.trim();
-    const lower = icerik.toLowerCase();
-
-    // Küfür Kontrolü
-    if (kufurListesi.some(k => lower.includes(k))) {
-        await message.delete().catch(() => {});
-        await uyariVer(message, 'Küfür / Hakaret');
-        return;
-    }
-
-    // Aşırı Caps Lock
-    const capsOrani = (icerik.match(/[A-ZĞÜŞİÖÇ]/g) || []).length / (icerik.length || 1);
-    if (icerik.length > 8 && capsOrani > 0.7) {
-        await message.delete().catch(() => {});
-        await uyariVer(message, 'Aşırı Caps Lock');
-        return;
-    }
-
-    // Link / Davet
-    if (/(https?:\/\/|discord\.gg|discord\.com\/invite)/i.test(icerik)) {
-        await message.delete().catch(() => {});
-        await uyariVer(message, 'Link / Davet');
-        return;
-    }
-
-    // Reklam
-    if (reklamKelimeleri.some(k => lower.includes(k))) {
-        await message.delete().catch(() => {});
-        await uyariVer(message, 'Reklam');
-        return;
-    }
-
-    // Spam Kontrolü
-    const simdi = Date.now();
-    if (!spamTakip.has(userId)) spamTakip.set(userId, []);
-    let zamanlar = spamTakip.get(userId).filter(t => simdi - t < SPAM_ZAMAN);
-    zamanlar.push(simdi);
-    spamTakip.set(userId, zamanlar);
-
-    if (zamanlar.length >= SPAM_LIMIT) {
-        await message.delete().catch(() => {});
-        spamTakip.set(userId, []);
-        await uyariVer(message, 'Spam');
-        return;
-    }
 
     // ====================== XP SİSTEMİ ======================
     if (!kullaniciVerileri.has(userId)) {
